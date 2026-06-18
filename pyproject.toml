@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "web-article-extractor"
+version = "0.1.0"
+description = "Two-stage web article extractor (trafilatura + Playwright) with YouTube transcript fetching."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "John Linotte", email = "contact@harnais.be" }]
+keywords = ["scraping", "article", "extraction", "trafilatura", "playwright", "youtube", "transcript"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Internet :: WWW/HTTP",
+]
+dependencies = [
+    "trafilatura",
+    "playwright",
+]
+
+[project.optional-dependencies]
+youtube = ["yt-dlp"]
+
+[project.urls]
+Homepage = "https://harnais.be"
+
+[project.scripts]
+web-article-extractor = "web_article_extractor.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
