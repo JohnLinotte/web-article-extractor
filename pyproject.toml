@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harnais-web-extractor"
-version = "0.1.1"
+version = "0.1.2"
 description = "Two-stage web article extractor (trafilatura + Playwright) with YouTube transcript fetching."
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,7 +25,6 @@ dependencies = [
 
 [project.optional-dependencies]
 youtube = ["yt-dlp"]
-whisper = ["faster-whisper"]
 test = ["pytest"]
 
 [project.urls]

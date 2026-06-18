@@ -47,10 +47,6 @@ python -m web_article_extractor "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 > (`pip install "harnais-web-extractor[youtube]"`) or provide any `yt-dlp`
 > binary on your `PATH`. Without it, `fetch_transcript()` cannot run.
 >
-> **Optional: Whisper fallback** for videos without subtitles — install
-> `faster-whisper` via the `whisper` extra:
-> `pip install "harnais-web-extractor[whisper]"`.
->
 > **yt-dlp tuning** (optional env vars, all empty by default so the package
 > works on any machine):
 > - `YT_DLP_COOKIES_FROM_BROWSER=firefox` — pass `--cookies-from-browser firefox`

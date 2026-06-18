@@ -3,8 +3,7 @@
 
 Downloads audio and/or subtitles from YouTube URLs using the yt-dlp binary,
 and provides a transcript cascade (manual subtitles -> auto-generated
-subtitles -> optional faster-whisper fallback). Zero LLM is used for the
-subtitle path.
+subtitles). Zero LLM is used for the subtitle path.
 
 The yt-dlp binary path can be overridden with the ``YT_DLP_BIN`` environment
 variable; it defaults to ``~/.local/bin/yt-dlp``.
@@ -17,8 +16,6 @@ Download strategy:
 Transcript modes:
   - transcript : human-readable transcript.
   - analyze    : JSON with prompt + data (for downstream LLM analysis).
-  - whisper    : download audio + transcribe with faster-whisper
-                 (fallback when subtitles are unavailable).
 """
 
 from __future__ import annotations
@@ -330,7 +327,6 @@ def download_audio(
     """Download the best audio stream from a YouTube video.
 
     Prefers AAC (mp4a) streams; falls back to best available audio.
-    faster-whisper supports m4a/webm natively -- no ffmpeg needed.
 
     Args:
         url: YouTube video URL.
@@ -375,77 +371,6 @@ def download_audio(
 # ---------------------------------------------------------------------------
 # Transcript helpers
 # ---------------------------------------------------------------------------
-
-
-def _transcribe_with_whisper(
-    audio_path: str,
-    model_size: str = "medium",
-    language: str | None = None,
-) -> dict:
-    """Transcribe an audio file using faster-whisper.
-
-    Args:
-        audio_path: Path to the audio file (webm, m4a, wav, etc.).
-        model_size: Whisper model size (tiny, base, small, medium, large-v3).
-            Default 'medium' -- good balance of speed/accuracy for French.
-        language: ISO language code for transcription. None = auto-detect.
-
-    Returns:
-        Dict with 'text' (full transcript), 'language' (detected/forced),
-        'segments' (list of {start, end, text}), and 'model' (model used).
-
-    Raises:
-        ImportError: If faster-whisper is not installed.
-        RuntimeError: If transcription fails.
-    """
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as exc:
-        raise ImportError(
-            "faster-whisper is not installed. Install with: "
-            "pip install faster-whisper"
-        ) from exc
-
-    logger.info("Loading whisper model '%s' for transcription...", model_size)
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
-
-    logger.info(
-        "Transcribing %s (language=%s)...",
-        audio_path, language or "auto-detect",
-    )
-    segments_iter, info = model.transcribe(
-        audio_path,
-        language=language,
-        beam_size=5,
-        vad_filter=True,
-    )
-
-    segments = []
-    full_text_parts = []
-    for segment in segments_iter:
-        segments.append({
-            "start": round(segment.start, 2),
-            "end": round(segment.end, 2),
-            "text": segment.text.strip(),
-        })
-        full_text_parts.append(segment.text.strip())
-
-    detected_language = info.language if info else (language or "unknown")
-    language_probability = info.language_probability if info else 0.0
-
-    logger.info(
-        "Transcription complete: %d segments, language=%s (%.0f%%), %d chars",
-        len(segments), detected_language, language_probability * 100,
-        len(" ".join(full_text_parts)),
-    )
-
-    return {
-        "text": " ".join(full_text_parts),
-        "language": detected_language,
-        "language_probability": language_probability,
-        "segments": segments,
-        "model": model_size,
-    }
 
 
 def _format_duration(seconds: int) -> str:
@@ -515,45 +440,6 @@ def format_llm_context(
     }
 
 
-def format_whisper_context(
-    metadata: dict,
-    whisper_result: dict,
-    url: str,
-) -> dict:
-    """Format whisper transcription as JSON for downstream LLM analysis.
-
-    Same structure as format_llm_context but with whisper-specific metadata.
-    """
-    detected_lang = whisper_result.get("language", "unknown")
-    model = whisper_result.get("model", "medium")
-    transcript_text = whisper_result.get("text", "")
-
-    return {
-        "prompt": (
-            "You are an expert video content analyst. Summarize and analyze the "
-            "YouTube transcript below. Produce:\n"
-            "1. **Summary** (5-10 sentences, the essential points)\n"
-            "2. **Key points** (a structured list of the main arguments/ideas)\n"
-            "3. **Critical analysis** (relevance, quality of arguments, "
-            "what to remember, possible limitations)\n\n"
-            "Include the video metadata as a header."
-        ),
-        "data": {
-            "url": url,
-            "title": metadata.get("title", ""),
-            "channel": metadata.get("channel", ""),
-            "duration_seconds": metadata.get("duration_seconds", 0),
-            "duration_formatted": _format_duration(
-                metadata.get("duration_seconds", 0)
-            ),
-            "description": metadata.get("description", ""),
-            "upload_date": metadata.get("upload_date", ""),
-            "transcript_source": f"whisper ({detected_lang}, model={model})",
-            "transcript": transcript_text,
-        },
-    }
-
-
 def fetch_transcript(
     url: str,
     preferred_langs: Optional[list[str]] = None,
@@ -561,8 +447,7 @@ def fetch_transcript(
     """Fetch a YouTube transcript via the subtitle cascade.
 
     Tries manual subtitles first, then auto-generated subtitles, using the
-    yt-dlp subtitle cascade. No audio download or whisper fallback is
-    performed here.
+    yt-dlp subtitle cascade. No audio download is performed here.
 
     Args:
         url: YouTube video URL.
@@ -681,14 +566,7 @@ def _run_download_cli(args) -> int:
 
 
 def _run_transcript_cli(args) -> int:
-    """CLI for the transcript cascade (subtitles + whisper fallback)."""
-    # Configure logging for whisper mode (useful for progress)
-    if args.mode == "whisper":
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        )
-
+    """CLI for the transcript cascade (subtitles only)."""
     # Validate URL
     if not is_youtube_url(args.url):
         print(
@@ -710,10 +588,6 @@ def _run_transcript_cli(args) -> int:
         )
         return 1
 
-    # --- Whisper mode: download audio + transcribe ---
-    if args.mode == "whisper":
-        return _run_whisper_mode(args, metadata)
-
     # --- Subtitle mode (transcript / analyze) ---
     # Pass subtitle_langs from metadata to avoid a duplicate --dump-json call
     with tempfile.TemporaryDirectory(prefix="wae_ytsub_") as tmpdir:
@@ -726,7 +600,7 @@ def _run_transcript_cli(args) -> int:
         # Differentiate two very different failures that both yield "no subs":
         #   * Subtitles ARE published (metadata listed langs) but the targeted
         #     download failed / timed out -> yt-dlp throttle. RETRYABLE: exit 1
-        #   * No subtitles published at all -> exit 2 signals "needs whisper".
+        #   * No subtitles published at all -> exit 2 signals "no subtitles".
         langs = metadata.get("subtitle_langs") or {}
         subs_listed = bool(langs.get("manual") or langs.get("auto"))
         if subs_listed:
@@ -746,15 +620,14 @@ def _run_transcript_cli(args) -> int:
                 )
             )
             return 1
-        # No subtitles available -- exit code 2 signals "needs whisper"
+        # No subtitles available -- exit code 2 signals "no subtitles"
         print(
             json.dumps(
                 {
-                    "needs_whisper": True,
+                    "no_subtitles": True,
                     "metadata": metadata,
                     "message": (
-                        "No subtitles available for this video. "
-                        "A whisper fallback is required."
+                        "No subtitles available for this video."
                     ),
                 },
                 ensure_ascii=False,
@@ -780,77 +653,6 @@ def _run_transcript_cli(args) -> int:
             )
         )
 
-    return 0
-
-
-def _run_whisper_mode(args, metadata: dict) -> int:
-    """Download audio and transcribe with faster-whisper.
-
-    Returns exit code: 0 on success, 3 on whisper failure.
-    """
-    # Step 1: Download audio via yt-dlp
-    with tempfile.TemporaryDirectory(prefix="wae_whisper_") as tmpdir:
-        logger.info("Downloading audio for whisper transcription: %s", args.url)
-        audio_result = download_audio(args.url, tmpdir)
-
-        if "error" in audio_result:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "error": f"Audio download failed: {audio_result['error']}",
-                        "metadata": metadata,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 3
-
-        audio_path = audio_result["audio_path"]
-        logger.info(
-            "Audio downloaded: %s (%.2f MB, %s)",
-            audio_path, audio_result.get("file_size_mb", 0),
-            audio_result.get("format", "unknown"),
-        )
-
-        # Step 2: Transcribe with faster-whisper
-        try:
-            whisper_result = _transcribe_with_whisper(
-                audio_path,
-                model_size=args.whisper_model,
-                language=args.language,
-            )
-        except ImportError as exc:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "error": f"faster-whisper not available: {exc}",
-                        "metadata": metadata,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 3
-        except (RuntimeError, OSError) as exc:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "error": f"Whisper transcription failed: {exc}",
-                        "metadata": metadata,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 3
-
-    # Step 3: Format output as JSON (same structure as --mode analyze)
-    result = format_whisper_context(metadata, whisper_result, args.url)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -887,27 +689,14 @@ def main_download() -> int:
 def main_transcript() -> int:
     """CLI entry point for the transcript cascade."""
     parser = argparse.ArgumentParser(
-        description="YouTube transcript extraction (zero LLM for subtitles, "
-                    "faster-whisper for whisper mode)",
+        description="YouTube transcript extraction (zero LLM for subtitles)",
     )
     parser.add_argument("--url", required=True, help="YouTube video URL")
     parser.add_argument(
         "--mode",
-        choices=["transcript", "analyze", "whisper"],
+        choices=["transcript", "analyze"],
         default="transcript",
-        help="Output mode: transcript (human text), analyze (JSON for LLM), "
-             "or whisper (audio download + faster-whisper transcription)",
-    )
-    parser.add_argument(
-        "--whisper-model",
-        default="medium",
-        help="Whisper model size for --mode whisper (default: medium). "
-             "Options: tiny, base, small, medium, large-v3",
-    )
-    parser.add_argument(
-        "--language",
-        default=None,
-        help="ISO language code for whisper transcription (default: auto-detect)",
+        help="Output mode: transcript (human text) or analyze (JSON for LLM)",
     )
     args = parser.parse_args()
     return _run_transcript_cli(args)
