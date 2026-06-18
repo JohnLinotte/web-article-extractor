@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,24 @@ logger = logging.getLogger("web_article_extractor.youtube")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-YT_DLP_BIN = os.getenv("YT_DLP_BIN", str(Path.home() / ".local" / "bin" / "yt-dlp"))
+def _resolve_ytdlp_bin() -> str:
+    """Resolve the yt-dlp binary path.
+
+    Priority: $YT_DLP_BIN env var, then `yt-dlp` found on $PATH (shutil.which),
+    then the historical default ~/.local/bin/yt-dlp as a last resort. The
+    $PATH lookup is what makes `pip install "harnais-web-extractor[youtube]"`
+    work out-of-the-box in a venv (the binary lands in <venv>/bin/yt-dlp).
+    """
+    env = os.getenv("YT_DLP_BIN")
+    if env:
+        return env
+    on_path = shutil.which("yt-dlp")
+    if on_path:
+        return on_path
+    return str(Path.home() / ".local" / "bin" / "yt-dlp")
+
+
+YT_DLP_BIN = _resolve_ytdlp_bin()
 
 # YouTube URL patterns
 _YT_URL_PATTERNS = [
@@ -66,6 +84,26 @@ def is_youtube_url(url: str) -> bool:
     return any(pattern.search(url) for pattern in _YT_URL_PATTERNS)
 
 
+def _yt_dlp_extra_args() -> list[str]:
+    """Optional yt-dlp arguments from the environment, empty by default.
+
+    - YT_DLP_COOKIES_FROM_BROWSER: e.g. "firefox" → adds --cookies-from-browser firefox
+    - YT_DLP_JS_RUNTIME: e.g. "node" → adds --js-runtime node
+
+    Both default to unset (no cookies, standard JS runtime) so the package
+    works on any machine. Set them to match your local setup if you need
+    cookies or a specific JS runtime.
+    """
+    extra: list[str] = []
+    browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
+    if browser:
+        extra += ["--cookies-from-browser", browser]
+    js = os.getenv("YT_DLP_JS_RUNTIME")
+    if js:
+        extra += ["--js-runtime", js]
+    return extra
+
+
 def _run_ytdlp(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
     """Run yt-dlp with the given arguments.
 
@@ -80,7 +118,7 @@ def _run_ytdlp(args: list[str], timeout: int = 120) -> subprocess.CompletedProce
         FileNotFoundError: If yt-dlp binary is not found.
         subprocess.TimeoutExpired: If the command times out.
     """
-    cmd = [YT_DLP_BIN, "--cookies-from-browser", "firefox", "--js-runtime", "node", *args]
+    cmd = [YT_DLP_BIN, *_yt_dlp_extra_args(), *args]
     return subprocess.run(
         cmd,
         capture_output=True,
