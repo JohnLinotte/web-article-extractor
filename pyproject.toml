@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "web-article-extractor"
+name = "harnais-web-extractor"
 version = "0.1.0"
 description = "Two-stage web article extractor (trafilatura + Playwright) with YouTube transcript fetching."
 readme = "README.md"
@@ -28,9 +28,10 @@ youtube = ["yt-dlp"]
 
 [project.urls]
 Homepage = "https://harnais.be"
+Repository = "https://github.com/JohnLinotte/web-article-extractor"
 
 [project.scripts]
-web-article-extractor = "web_article_extractor.__main__:main"
+harnais-web-extractor = "web_article_extractor.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

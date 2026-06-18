@@ -6,14 +6,26 @@ first (fast, no browser), then a headless Playwright Chromium fallback for
 JavaScript-heavy pages — and fetches transcripts from YouTube videos through a
 manual-then-automatic subtitle cascade.
 
+> **Naming.** The PyPI distribution is `harnais-web-extractor` (this repository
+> keeps the name `web-article-extractor`). The Python import package is
+> `web_article_extractor`.
+
 ## Install
 
+From PyPI:
+
 ```bash
-pip install -e .
+pip install harnais-web-extractor
 # Playwright also needs a browser binary the first time:
 playwright install chromium
 # Optional YouTube transcript support:
-pip install -e ".[youtube]"
+pip install "harnais-web-extractor[youtube]"
+```
+
+Or from source (GitHub):
+
+```bash
+pip install git+https://github.com/JohnLinotte/web-article-extractor.git
 ```
 
 ## Usage
