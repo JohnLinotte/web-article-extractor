@@ -18,7 +18,7 @@ From PyPI:
 pip install harnais-web-extractor
 # Playwright also needs a browser binary the first time:
 playwright install chromium
-# Optional YouTube transcript support:
+# YouTube transcript extraction requires yt-dlp (optional extra):
 pip install "harnais-web-extractor[youtube]"
 ```
 
@@ -42,6 +42,10 @@ python -m web_article_extractor https://example.com/some-article --format json
 # A YouTube URL fetches the transcript instead:
 python -m web_article_extractor "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
+
+> **YouTube transcripts require `yt-dlp`.** Install it via the `youtube` extra
+> (`pip install "harnais-web-extractor[youtube]"`) or provide any `yt-dlp`
+> binary on your `PATH`. Without it, `fetch_transcript()` cannot run.
 
 ### Python API
 
